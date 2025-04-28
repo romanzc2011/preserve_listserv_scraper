@@ -1,0 +1,32 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "type": "lldb",
+        "request": "launch",
+        "name": "Debug (LLDB via Cargo)",
+        "cargo": {
+          "args": [
+            "build",
+            "--bin=preserve_listserv"
+          ],
+          "filter": {
+            "name": "preserve_listserv",
+            "kind": "bin"
+          }
+        },
+        "args": [],
+        "cwd": "${workspaceFolder}"
+      },
+      {
+        "name": "Debug (MSVC)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/target/debug/preserve_listserv.exe",
+        "args": [],
+        "cwd": "${workspaceFolder}",
+        "preLaunchTask": "cargo build"
+      }
+    ]
+  }
+  
