@@ -1,13 +1,15 @@
 use reqwest::blocking::Client;
 use scraper::{Html, Selector};
+use url::Url;
+use std::collections::HashMap;
+use crate::search::page_threads::{parse_threads, Thread};
 
-// TODO alter resolve_href to resolve id of tr in tables, we need to find the More link and follow it
-// TODO add a function to follow the More link and extract the content
+#[derive(Debug)]
 pub struct SearchThread {
     client: Client,
     url: String,
     page: u32,
-    doc: Html,
+    pub doc: Html,
     results: Vec<String>,
 }
 
@@ -48,29 +50,64 @@ impl SearchThread {
         
         // Then process each link
         for link_id in links {
-            self.resolve_href(&link_id)?;
             self.follow_link(&link_id)?;
         }
         
-        Ok(())
+        return Ok(())
     }
 
     // #########################################################################
-    // RESOLVE ID IN THE HREF
+    // SEARCH AND FOLLOW
     // #########################################################################
-    pub fn resolve_href(&self, href_id: &str) -> Result<String, String> {
-        // Selector that grabs the href id
-        let selector_str = format!("[id='{}']", href_id);
-        let sel = Selector::parse(&selector_str)
-            .map_err(|e| format!("Failed to parse selector: {}", e))?;
+    pub fn search_and_follow(&mut self) -> Result<Vec<HashMap<String, Thread>>, String> {
+        // Fetch and parse TOC
+        self.build_search_url()?;
 
-        if let Some(element) = self.doc.select(&sel).next() {
-            let id_val = element.value().attr("id").unwrap();
-            println!("ID Value: {}", id_val);
-            Ok(id_val.to_string())
-        } else {
-            Err(format!("Element with ID '{}' not found", href_id))
+        // Fetch all More relative hrefs 
+        let rel_links = self.collect_judsys_links()?;
+
+        let mut all_threads = Vec::new();
+
+        // Loop through more link and make absolute links
+        for rel in rel_links {
+            let base = Url::parse(&self.url).map_err(|e| format!("Failed to parse URL: {}", e))?;
+            let full = base.join(&rel).map_err(|e| format!("Failed to join URL: {}", e).to_string())?;
+
+            // Follow link and fetch content
+            let resp = self.client.get(full.as_str()).send().map_err(|e| format!("Failed to send request: {}", e))?;
+            let body = resp.text().map_err(|e| format!("Failed to get text: {}", e))?;
+
+            // Parse and extract replies and hand over to page threads
+            let doc2 = Html::parse_document(&body);
+            let threads_map = parse_threads(&doc2)?;
+            all_threads.push(threads_map);
         }
+        
+        return Ok(all_threads)
+    }
+
+
+
+    // #########################################################################
+    // RESOLVE ID IN THE HREF - specific to the search page JUDSYS, searching for the text between <a> tags
+    // #########################################################################
+    pub fn collect_judsys_links(&self) -> Result<Vec<String>, String> {
+        // Build a selector matching any <a> whose href starts with the JUDSYS prefix
+        let prefix = "/cgi-bin/wa?A2=JUDSYS;";
+        let selector_str = format!("a[href^=\"{}\"]", prefix);
+        let sel = Selector::parse(&selector_str)
+            .map_err(|e| format!("Failed to parse selector: `{}`: {}", selector_str,  e))?;
+
+        // Collect all links that match the selector
+        let links: Vec<String> = self.doc
+            .select(&sel)
+            .filter(|el| {
+                el.text().map(str::trim).any(|t| t.starts_with("[More ..."))
+            })
+            .filter_map(|el| el.value().attr("href").map(str::to_string))
+            .collect();
+
+        return Ok(links)
     }
 
     // Build the search URL

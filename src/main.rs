@@ -34,6 +34,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut search = SearchThread::new(user.get_client()?.clone(), &protected_url);
     //search.search()?;
     search.search_toc()?;
+    let links: Vec<String> = search.collect_judsys_links()?;
+    links.iter().for_each(|link| {
+        println!("{}", link);
+    });
 
     Ok(())
 }
